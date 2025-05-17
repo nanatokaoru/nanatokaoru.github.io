@@ -1,68 +1,70 @@
 :root {
-    --chapter-image-width: 600px;
+    --chapter-image-width: 300px;
     --chapter-title-font-size: 24px;
 }
 
-    body {
-      font-family: 'Inter', sans-serif;
-      background-color: #f4f4f4;
-      margin: 0;
-      padding: 0;
-    }
+body {
+    font-family: 'Inter', sans-serif;
+    background-color: #f4f4f4;
+    margin: 0;
+    padding: 0;
+}
 
-    .title {
-        text-align: center;
-        font-size: 32px;
-    }
+.title {
+    text-align: center;
+    font-size: 32px;
+}
 
-    .wallpaper-container {
-      display: flex;
-      flex-wrap: wrap;
-      justify-content: center;
-      margin: 5px 0 50px;
-    }
+.wallpaper-container {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    margin: 5px 0 50px;
+}
 
 
+.wallpaper-item {
+    border-radius: 8px;
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+    transition: transform 0.3s ease;
+    margin: 30px 10px;
+    display: flex;
+    flex-direction: column;
 
-    .wallpaper-item {
-      border-radius: 8px;
-      box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
-      transition: transform 0.3s ease;
-      margin: 30px 10px;
-        display: flex;
-        flex-direction: column;
+}
 
-    }
+.wallpaper-item .single-image {
+    height: var(--chapter-image-width);
+    width: auto;
+}
 
-    .wallpaper-item .single-image {
-        height: var(--chapter-image-width);
-        width: auto;
-    }
+.wallpaper-item .dual-image {
+    display: flex;
+    justify-content: flex-start;
+    flex-wrap: wrap;
+    height: var(--chapter-image-width);
+    width: auto;
 
-    .wallpaper-item .dual-image {
-      display: flex;
-      flex-wrap: wrap;
-      height: var(--chapter-image-width);
-        width: auto;
 
-    }
+}
 
-    .wallpaper-item:hover {
-      transform: scale(2.1);
-    }
+.wallpaper-item:hover {
+    transform: scale(2.1);
+}
 
-    .wallpaper-item img {
-      height: 100%;
-    }
-    .wallpaper-item .title {
+.wallpaper-item img {
+    height: 100%;
+}
 
-        font-size: var(--chapter-title-font-size);
-        overflow: hidden;
-        text-overflow: ellipsis;
-        white-space: nowrap;
-        text-align: center;
-        background-color: #f4f4f4;
-    }
+.wallpaper-item .title {
+
+    font-size: var(--chapter-title-font-size);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    text-align: center;
+    background-color: #f4f4f4;
+}
 
 
 
