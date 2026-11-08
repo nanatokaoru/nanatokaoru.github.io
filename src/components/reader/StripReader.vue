@@ -14,8 +14,10 @@ const props = withDefaults(
     snapMode?: 'page' | 'spread'
     startAt?: 'start' | 'end'
     openIndex?: number
+    /** Alternate file for a catalog page. The page list itself stays put. */
+    displaySrc?: Record<string, string>
   }>(),
-  { snapMode: 'page', startAt: 'start' },
+  { snapMode: 'page', startAt: 'start', displaySrc: () => ({}) },
 )
 
 const emit = defineEmits<{
@@ -33,8 +35,13 @@ const missingPages = ref<string[]>([])
 // Pages whose image has finished loading; keyed by URL so re-appended pages stay loaded
 const loadedPages = shallowReactive(new Set<string>())
 
+function shownSrc(page: string) {
+  return props.displaySrc[page] || page
+}
+
 function isLoading(page: string) {
-  return !loadedPages.has(page) && !missingPages.value.includes(page)
+  const src = shownSrc(page)
+  return !loadedPages.has(src) && !missingPages.value.includes(src)
 }
 
 const TAP_SLOP = 12
@@ -399,18 +406,19 @@ defineExpose({ nudge, slide, place, index, isScrolling })
         v-for="(page, i) in pages"
         :key="page"
         class="slot"
-        :class="{ 'is-missing': missingPages.includes(page), 'is-loading': isLoading(page) }"
+        :class="{ 'is-missing': missingPages.includes(shownSrc(page)), 'is-loading': isLoading(page) }"
         :style="{ aspectRatio: String(aspects[i] ?? DEFAULT_ASPECT) }"
       >
-        <p v-if="missingPages.includes(page)" class="missing-note">这一页没有找到</p>
+        <p v-if="missingPages.includes(shownSrc(page))" class="missing-note">这一页没有找到</p>
         <img
           v-else
-          :src="page"
+          :src="shownSrc(page)"
+          :class="{ swapped: shownSrc(page) !== page }"
           :alt="`page-${i + 1}`"
           draggable="false"
           decoding="async"
-          @load="loadedPages.add(page)"
-          @error="markMissing(page)"
+          @load="loadedPages.add(shownSrc(page))"
+          @error="markMissing(shownSrc(page))"
           @dblclick="onDblClick(i)"
         />
       </div>
@@ -519,5 +527,10 @@ defineExpose({ nudge, slide, place, index, isScrolling })
   object-fit: contain;
   display: block;
   pointer-events: auto;
+}
+
+/* A translated file stays inside the Japanese page's box, so the strip does not slide. */
+.slot img.swapped {
+  width: 100%;
 }
 </style>

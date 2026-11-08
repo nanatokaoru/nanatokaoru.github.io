@@ -14,7 +14,9 @@ import {
   neighborChapterNum,
   prefetchPages,
   resolveRead,
+  whenPagesReady,
 } from '@/data/catalog'
+import { hasZhImage, pageImage } from '@/data/imageLang'
 import { isSameSpread, spreadPair } from '@/data/dualSpreads'
 import type { GalleryKind } from '@/types/comic'
 
@@ -30,7 +32,7 @@ interface Segment {
 
 const route = useRoute()
 const router = useRouter()
-const { direction, dualSnap, setDirection, setDualSnap } = useReaderPrefs()
+const { direction, edition, dualSnap, setDirection, setEdition: storeEdition, setDualSnap } = useReaderPrefs()
 const progress = useReadingProgress()
 
 const currentIndex = ref(0)
@@ -90,6 +92,37 @@ const pageLocal = computed(() => {
 })
 
 const currentPageUrl = computed(() => stripPages.value[currentIndex.value] ?? '')
+
+const displaySrc = computed(() => {
+  if (edition.value !== 'zh') return {}
+  const out: Record<string, string> = {}
+  for (const url of stripPages.value) {
+    const zh = pageImage(url, 'zh')
+    if (zh !== url) out[url] = zh
+  }
+  return out
+})
+
+const chapterHasZh = computed(() => {
+  const seg = activeSegment.value
+  if (!seg || source.value !== 'chapter') return false
+  return stripPages.value.slice(seg.start, seg.start + seg.length).some((url) => hasZhImage(url))
+})
+
+function prefetchShown(urls: string[]) {
+  if (edition.value !== 'zh') return
+  prefetchPages(urls.map((url) => pageImage(url, 'zh')))
+}
+
+async function setEdition(next: 'ja' | 'zh') {
+  if (edition.value === next) return
+  if (next === 'zh') {
+    const urls = stripPages.value.map((url) => pageImage(url, 'zh'))
+    prefetchPages(urls)
+    await whenPagesReady(urls)
+  }
+  storeEdition(next)
+}
 
 const currentSpread = computed(() => {
   if (source.value !== 'chapter' || !currentPageUrl.value) return null
@@ -304,6 +337,7 @@ async function warmNeighbor(chapterId: string, delta: -1 | 1, token: number) {
   // Only the following chapter is spliced in early. Inserting the previous
   // one would shove the page the reader is already looking at.
   prefetchPages(resolved.pages)
+  prefetchShown(resolved.pages)
   if (delta === 1) appendWhenIdle(neighborId, token)
 }
 
@@ -334,6 +368,7 @@ async function goChapter(delta: -1 | 1) {
     if (delta === 1) appendChapter(neighborId)
     else prependChapter(neighborId)
     prefetchPages(resolved.pages)
+  prefetchShown(resolved.pages)
   }
   const seg = segmentFor(neighborId)
   if (!seg) return
@@ -385,6 +420,7 @@ async function settleEdge(overflow: -1 | 1) {
     if (overflow === 1) appendChapter(neighborId)
     else prependChapter(neighborId)
     prefetchPages(resolved.pages)
+  prefetchShown(resolved.pages)
   }
   const seg = segmentFor(neighborId)
   if (!seg) return
@@ -539,6 +575,26 @@ onUnmounted(() => {
           {{ dualSaving ? '保存中…' : dualMarked ? '已标双页' : '标为双页' }}
         </button>
         <span v-if="dualError" class="warn">{{ dualError }}</span>
+        <div v-if="chapterHasZh" class="segmented" role="group" aria-label="阅读语言">
+          <button
+            type="button"
+            class="seg"
+            :aria-pressed="edition === 'ja'"
+            :class="{ active: edition === 'ja' }"
+            @click="setEdition('ja')"
+          >
+            日文
+          </button>
+          <button
+            type="button"
+            class="seg"
+            :aria-pressed="edition === 'zh'"
+            :class="{ active: edition === 'zh' }"
+            @click="setEdition('zh')"
+          >
+            中文
+          </button>
+        </div>
         <div class="segmented" role="group" aria-label="阅读方向">
           <button
             type="button"
@@ -604,6 +660,7 @@ onUnmounted(() => {
       <StripReader
         ref="reader"
         :pages="stripPages"
+        :display-src="displaySrc"
         :direction="direction"
         :snap-mode="snapMode"
         :start-at="startAt"
