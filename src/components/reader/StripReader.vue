@@ -57,7 +57,11 @@ let syncTimer: ReturnType<typeof setTimeout> | null = null
 
 function openingIndex() {
   const max = Math.max(0, props.pages.length - 1)
-  if (typeof props.openIndex === 'number' && Number.isInteger(props.openIndex) && props.openIndex >= 0) {
+  if (
+    typeof props.openIndex === 'number' &&
+    Number.isInteger(props.openIndex) &&
+    props.openIndex >= 0
+  ) {
     return snapIndex(Math.min(props.openIndex, max), props.snapMode, props.pages.length)
   }
   if (props.startAt === 'end') {
@@ -511,7 +515,6 @@ defineExpose({ nudge, slide, place, index, isScrolling })
 }
 
 .slot img {
-  width: 100%;
   height: 100%;
   object-fit: contain;
   display: block;
