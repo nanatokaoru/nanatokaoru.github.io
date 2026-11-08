@@ -1,11 +1,14 @@
 <script setup lang="ts">
 import { nextTick, onMounted, onUnmounted, ref } from 'vue'
+import { useImagesReady } from '@/composables/useImagesReady'
 
-defineProps<{
+const props = defineProps<{
   title: string
   coverUrl?: string
   paragraphs: readonly string[]
 }>()
+
+const { ready, settle } = useImagesReady(() => [props.coverUrl])
 
 const rootEl = ref<HTMLElement | null>(null)
 const coverEl = ref<HTMLElement | null>(null)
@@ -27,6 +30,11 @@ async function measure() {
   if (overflow.value !== nextOverflow) overflow.value = nextOverflow
 }
 
+function onCoverSettled() {
+  settle()
+  void measure()
+}
+
 function toggle() {
   open.value = !open.value
 }
@@ -45,8 +53,19 @@ onUnmounted(() => observer?.disconnect())
 
 <template>
   <article ref="rootEl" class="volume-intro">
-    <div v-if="coverUrl" ref="coverEl" class="volume-cover">
-      <img :src="coverUrl" :alt="title + '封面'" loading="lazy" @load="measure" />
+    <div
+      v-if="coverUrl"
+      ref="coverEl"
+      class="volume-cover skeleton"
+      :class="{ 'is-ready': ready }"
+    >
+      <img
+        :src="coverUrl"
+        :alt="title + '封面'"
+        loading="lazy"
+        @load="onCoverSettled"
+        @error="onCoverSettled"
+      />
     </div>
     <div class="volume-side">
       <div
@@ -89,6 +108,11 @@ onUnmounted(() => observer?.disconnect())
   border-radius: 10px;
   padding: 0;
   overflow: hidden;
+}
+
+/* Reserve a cover-sized box while loading so the text does not jump */
+.volume-cover:not(.is-ready) {
+  aspect-ratio: 3 / 4.2;
 }
 
 .volume-cover img {

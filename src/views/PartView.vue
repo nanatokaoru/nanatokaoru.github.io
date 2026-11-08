@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, reactive } from 'vue'
 import { useRoute } from 'vue-router'
 import ChapterCard from '@/components/ChapterCard.vue'
 import MissingNotice from '@/components/MissingNotice.vue'
@@ -27,6 +27,23 @@ const coverByVolume = computed(() => {
   }
   return covers
 })
+
+// Settled image counts per "part:kind", so each special card knows when its previews are in.
+const settledPreviews = reactive<Record<string, number>>({})
+
+function previewKey(kind: string) {
+  return `${meta.value?.id ?? ''}:${kind}`
+}
+
+function settlePreview(kind: string) {
+  const key = previewKey(kind)
+  settledPreviews[key] = (settledPreviews[key] ?? 0) + 1
+}
+
+function previewReady(item: { kind: string; rightImageUrl?: string }) {
+  const needed = item.kind === 'dual' && item.rightImageUrl ? 2 : 1
+  return (settledPreviews[previewKey(item.kind)] ?? 0) >= needed
+}
 
 function volumeNumber(label: string) {
   const matched = label.match(/\d+/)
@@ -103,12 +120,34 @@ const galleries = computed(() => {
           class="special-card"
           :to="{ name: 'gallery', params: { part: meta.id, kind: item.kind } }"
         >
-          <div class="preview" :class="{ dual: item.kind === 'dual' }">
+          <div
+            class="preview skeleton"
+            :class="{ dual: item.kind === 'dual', 'is-ready': previewReady(item) }"
+          >
             <template v-if="item.kind === 'dual' && item.rightImageUrl">
-              <img :src="item.leftImageUrl" alt="" loading="lazy" />
-              <img :src="item.rightImageUrl" alt="" loading="lazy" />
+              <img
+                :src="item.leftImageUrl"
+                alt=""
+                loading="lazy"
+                @load="settlePreview(item.kind)"
+                @error="settlePreview(item.kind)"
+              />
+              <img
+                :src="item.rightImageUrl"
+                alt=""
+                loading="lazy"
+                @load="settlePreview(item.kind)"
+                @error="settlePreview(item.kind)"
+              />
             </template>
-            <img v-else :src="item.leftImageUrl" :alt="item.label" loading="lazy" />
+            <img
+              v-else
+              :src="item.leftImageUrl"
+              :alt="item.label"
+              loading="lazy"
+              @load="settlePreview(item.kind)"
+              @error="settlePreview(item.kind)"
+            />
             <div class="overlay">
               <span class="label">{{ item.label }}</span>
               <span class="count">{{ item.count }}</span>
@@ -219,6 +258,7 @@ h1 {
   position: relative;
   aspect-ratio: 7 / 10;
   background: #1a1518;
+  --skeleton-highlight: rgba(255, 255, 255, 0.12);
   overflow: hidden;
 }
 

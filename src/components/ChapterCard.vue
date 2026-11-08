@@ -1,16 +1,26 @@
 <script setup lang="ts">
-defineProps<{
+import { useImagesReady } from '@/composables/useImagesReady'
+
+const props = defineProps<{
   num: number
   chapterName?: string
   leftImageUrl: string
   to: string | Record<string, unknown>
 }>()
+
+const { ready, settle } = useImagesReady(() => [props.leftImageUrl])
 </script>
 
 <template>
   <RouterLink class="chapter-card card" :to="to">
-    <div class="frame">
-      <img :src="leftImageUrl" :alt="chapterName || `第${num}话`" loading="lazy" />
+    <div class="frame skeleton" :class="{ 'is-ready': ready }">
+      <img
+        :src="leftImageUrl"
+        :alt="chapterName || `第${num}话`"
+        loading="lazy"
+        @load="settle"
+        @error="settle"
+      />
     </div>
     <div class="title">
       <span class="num">第{{ num }}话</span>

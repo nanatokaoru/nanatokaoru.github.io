@@ -3,7 +3,7 @@ import { computed } from 'vue'
 import { useRoute } from 'vue-router'
 import GalleryCard from '@/components/GalleryCard.vue'
 import MissingNotice from '@/components/MissingNotice.vue'
-import { getPartMeta, isGalleryKind, isPartId, listGallery } from '@/data/catalog'
+import { getPartMeta, isGalleryKind, isPartId, listGallery, locateInChapter } from '@/data/catalog'
 
 const route = useRoute()
 
@@ -23,6 +23,32 @@ const kindLabel = computed(() => {
 const items = computed(() =>
   meta.value && kind.value ? listGallery(meta.value.id, kind.value) : [],
 )
+
+function readTarget(item: { index: number; leftImageUrl: string; rightImageUrl?: string }) {
+  const part = meta.value?.id
+  const galleryKind = kind.value
+  if (!part || !galleryKind) return { name: 'home' as const }
+  if (galleryKind === 'dual') {
+    const hit = locateInChapter(part, [item.leftImageUrl, item.rightImageUrl ?? ''])
+    if (hit) {
+      return {
+        name: 'read' as const,
+        query: { part, source: 'chapter', id: hit.id, page: String(hit.page) },
+      }
+    }
+  }
+  return {
+    name: 'read' as const,
+    query: { part, source: galleryKind, id: String(item.index) },
+  }
+}
+
+function cardLabel(item: { index: number; leftImageUrl: string; rightImageUrl?: string }) {
+  if (kind.value !== 'dual' || !meta.value) return undefined
+  const hit = locateInChapter(meta.value.id, [item.leftImageUrl, item.rightImageUrl ?? ''])
+  if (!hit) return `双页 ${item.index + 1}`
+  return `第${hit.id}话 · 第${hit.page}页`
+}
 </script>
 
 <template>
@@ -42,11 +68,8 @@ const items = computed(() =>
         :key="`${meta.id}-${kind}-${item.index}`"
         :left-image-url="item.leftImageUrl"
         :right-image-url="item.rightImageUrl"
-        :label="kind === 'dual' ? `双页 ${item.index + 1}` : undefined"
-        :to="{
-          name: 'read',
-          query: { part: meta.id, source: kind, id: String(item.index) },
-        }"
+        :label="cardLabel(item)"
+        :to="readTarget(item)"
       />
     </div>
   </div>

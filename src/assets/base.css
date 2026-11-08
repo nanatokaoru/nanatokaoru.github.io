@@ -55,6 +55,47 @@ button {
   box-shadow: var(--focus-ring);
 }
 
+/* Image skeleton: a frame-colored box with a light sweep until the image loads. */
+.skeleton {
+  position: relative;
+  background: var(--color-frame);
+  --skeleton-highlight: rgba(255, 255, 255, 0.7);
+}
+
+.skeleton::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    100deg,
+    transparent 30%,
+    var(--skeleton-highlight) 50%,
+    transparent 70%
+  );
+  background-size: 200% 100%;
+  animation: skeleton-sweep 1.4s linear infinite;
+  pointer-events: none;
+}
+
+.skeleton.is-ready::before {
+  display: none;
+}
+
+@keyframes skeleton-sweep {
+  from {
+    background-position: 100% 0;
+  }
+  to {
+    background-position: -100% 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .skeleton::before {
+    display: none;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

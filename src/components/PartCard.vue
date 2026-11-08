@@ -1,5 +1,7 @@
 <script setup lang="ts">
-defineProps<{
+import { useImagesReady } from '@/composables/useImagesReady'
+
+const props = defineProps<{
   label: string
   coverUrl: string
   chapters: number
@@ -8,12 +10,14 @@ defineProps<{
   dual: number
   to: string
 }>()
+
+const { ready, settle } = useImagesReady(() => [props.coverUrl])
 </script>
 
 <template>
   <RouterLink class="part-card card" :to="to">
-    <div class="cover-frame">
-      <img class="cover" :src="coverUrl" :alt="label" loading="lazy" />
+    <div class="cover-frame skeleton" :class="{ 'is-ready': ready }">
+      <img class="cover" :src="coverUrl" :alt="label" loading="lazy" @load="settle" @error="settle" />
     </div>
     <div class="body">
       <h2 class="display-title">{{ label }}</h2>

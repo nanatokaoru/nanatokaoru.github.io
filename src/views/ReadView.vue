@@ -7,13 +7,18 @@ import { readingTapZone } from '@/components/reader/stripMath'
 import { useReaderPrefs } from '@/composables/useReaderPrefs'
 import { useReadingProgress } from '@/composables/useReadingProgress'
 import {
+  commitDualMark,
   isPartId,
   isReadSource,
+  listGallery,
   neighborChapterNum,
   prefetchPages,
   resolveRead,
 } from '@/data/catalog'
+import { isSameSpread, spreadPair } from '@/data/dualSpreads'
 import type { GalleryKind } from '@/types/comic'
+
+const isDev = import.meta.env.DEV
 
 interface Segment {
   id: string
@@ -32,12 +37,16 @@ const currentIndex = ref(0)
 const resumeIndex = ref(0)
 const chromeOn = ref(true)
 const unresolved = ref(false)
+const dualSaving = ref(false)
+const dualError = ref('')
+const dualOverride = ref(new Map<string, boolean>())
 const stageEl = ref<HTMLElement | null>(null)
 const stripPages = ref<string[]>([])
 const segments = ref<Segment[]>([])
 const reader = ref<{
   slide: (visual: 'left' | 'right') => void
   place: (next: number, behavior?: ScrollBehavior) => void
+  isScrolling: () => boolean
 } | null>(null)
 
 const part = computed(() => {
@@ -80,6 +89,62 @@ const pageLocal = computed(() => {
   return { current: local + 1, total: seg.length }
 })
 
+const currentPageUrl = computed(() => stripPages.value[currentIndex.value] ?? '')
+
+const currentSpread = computed(() => {
+  if (source.value !== 'chapter' || !currentPageUrl.value) return null
+  // Partners come from the chapter being read, never from the next chapter spliced in after it
+  const seg = activeSegment.value
+  const chapterPages = seg ? stripPages.value.slice(seg.start, seg.start + seg.length) : stripPages.value
+  return spreadPair(chapterPages, currentPageUrl.value, direction.value)
+})
+
+// Order-independent, so a spread marked earlier still matches after the direction changes
+function spreadKey(pair: { leftImageUrl: string; rightImageUrl: string }) {
+  return [pair.leftImageUrl, pair.rightImageUrl].sort().join('|')
+}
+
+const dualMarked = computed(() => {
+  const pair = currentSpread.value
+  if (!pair || !part.value) return false
+  const override = dualOverride.value.get(spreadKey(pair))
+  if (override != null) return override
+  return listGallery(part.value, 'dual').some((item) => isSameSpread(item, pair))
+})
+
+const dualHint = computed(() => {
+  const pair = currentSpread.value
+  if (!pair) return '旁边这一页不在这一话里'
+  const left = pair.leftImageUrl.match(/(\d+)\.[^.]+$/)?.[1]
+  const right = pair.rightImageUrl.match(/(\d+)\.[^.]+$/)?.[1]
+  return `左 ${left} · 右 ${right}`
+})
+
+async function toggleDual() {
+  const pair = currentSpread.value
+  if (!isDev || !part.value || !pair || dualSaving.value) return
+  const marked = !dualMarked.value
+  dualSaving.value = true
+  dualError.value = ''
+  try {
+    const response = await fetch('/__config/dual', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ part: part.value, ...pair, marked }),
+    })
+    const body = (await response.json()) as { ok?: boolean; error?: string }
+    if (!response.ok || !body.ok) throw new Error(body.error || '保存失败')
+    commitDualMark(part.value, pair, marked)
+    const next = new Map(dualOverride.value)
+    next.set(spreadKey(pair), marked)
+    dualOverride.value = next
+  } catch (error) {
+    dualError.value = error instanceof Error ? error.message : '保存失败'
+  } finally {
+    dualSaving.value = false
+  }
+}
+
 const pageLabel = computed(() => {
   const { current, total } = pageLocal.value
   if (!total) return ''
@@ -113,6 +178,7 @@ function goBack() {
 }
 
 let warmToken = 0
+let settlingEdge = false
 
 const showGalleryNav = computed(
   () => source.value === 'covers' || source.value === 'pictures' || source.value === 'dual',
@@ -220,6 +286,9 @@ function prependChapter(prevId: string) {
     },
     ...segments.value.map((seg) => ({ ...seg, start: seg.start + added })),
   ]
+  // Index 0 would now point at the chapter just inserted. Keep it on the page
+  // the reader was already on until the strip reports the new position.
+  currentIndex.value += added
   return added
 }
 
@@ -234,12 +303,22 @@ async function warmNeighbor(chapterId: string, delta: -1 | 1, token: number) {
   if (token !== warmToken || !segmentFor(chapterId) || segmentFor(neighborId)) return
   // Only the following chapter is spliced in early. Inserting the previous
   // one would shove the page the reader is already looking at.
-  if (delta === 1) {
+  prefetchPages(resolved.pages)
+  if (delta === 1) appendWhenIdle(neighborId, token)
+}
+
+// Splicing a chapter in while a slide is animating cuts the animation short
+// (the view jumps several pages), so wait until the strip is at rest. If the
+// reader reaches the end first, onEdge appends it as a fallback.
+function appendWhenIdle(neighborId: string, token: number, attempt = 0) {
+  window.setTimeout(() => {
+    if (token !== warmToken || segmentFor(neighborId)) return
+    if (reader.value?.isScrolling() && attempt < 60) {
+      appendWhenIdle(neighborId, token, attempt + 1)
+      return
+    }
     appendChapter(neighborId)
-    prefetchPages(resolved.pages)
-  } else {
-    prefetchPages(resolved.pages)
-  }
+  }, attempt === 0 ? 0 : 120)
 }
 
 async function goChapter(delta: -1 | 1) {
@@ -275,6 +354,19 @@ function goGalleryNeighbor(delta: number) {
 }
 
 async function onEdge(overflow: -1 | 1) {
+  // A held key delivers another turn before the first prepend has moved the
+  // index. Each one would walk back an extra chapter (27 → 23).
+  if (settlingEdge) return
+  if (!part.value || !source.value) return
+  settlingEdge = true
+  try {
+    await settleEdge(overflow)
+  } finally {
+    settlingEdge = false
+  }
+}
+
+async function settleEdge(overflow: -1 | 1) {
   if (!part.value || !source.value) return
 
   if (source.value !== 'chapter') {
@@ -434,6 +526,19 @@ onUnmounted(() => {
       </div>
       <div class="controls">
         <span class="page-num muted">{{ pageLabel }}</span>
+        <button
+          v-if="isDev && source === 'chapter'"
+          type="button"
+          class="chip"
+          :class="{ active: dualMarked }"
+          :aria-pressed="dualMarked"
+          :disabled="!currentSpread || dualSaving"
+          :title="dualHint"
+          @click="toggleDual"
+        >
+          {{ dualSaving ? '保存中…' : dualMarked ? '已标双页' : '标为双页' }}
+        </button>
+        <span v-if="dualError" class="warn">{{ dualError }}</span>
         <div class="segmented" role="group" aria-label="阅读方向">
           <button
             type="button"
@@ -624,6 +729,12 @@ onUnmounted(() => {
 .chip {
   border: 1px solid rgba(255, 255, 255, 0.2);
   border-radius: 999px;
+}
+
+.chip.active {
+  background: rgba(176, 61, 110, 0.9);
+  color: #fff;
+  border-color: transparent;
 }
 
 .chip:hover:not(:disabled),

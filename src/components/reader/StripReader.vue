@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
+import { nextTick, onMounted, onUnmounted, ref, shallowReactive, watch } from 'vue'
 import { api as viewerApi } from 'v-viewer'
 import { pageAspect, prefetchPages } from '@/data/catalog'
 import { advanceIndex, snapIndex } from './stripMath'
@@ -30,6 +30,12 @@ const dragging = ref(false)
 const ready = ref(false)
 const aspects = ref<number[]>([])
 const missingPages = ref<string[]>([])
+// Pages whose image has finished loading; keyed by URL so re-appended pages stay loaded
+const loadedPages = shallowReactive(new Set<string>())
+
+function isLoading(page: string) {
+  return !loadedPages.has(page) && !missingPages.value.includes(page)
+}
 
 const TAP_SLOP = 12
 const TAP_DELAY_MS = 320
@@ -42,6 +48,10 @@ let wheelTimer: ReturnType<typeof setTimeout> | null = null
 let syncingFromCode = false
 let userMoved = false
 let prepareToken = 0
+// Only a full replace may invalidate a pending replace. An append landing
+// while the initial placement is still waiting for its frame must not leave
+// the reader stuck in the not-ready state.
+let replaceToken = 0
 let programmaticTarget: number | null = null
 let syncTimer: ReturnType<typeof setTimeout> | null = null
 
@@ -174,7 +184,22 @@ function onWheel(e: WheelEvent) {
   wheelTimer = setTimeout(() => syncFromScroll(true), 140)
 }
 
+let lastScrollAt = 0
+
+// True while anything is moving the strip: a drag, a slide, or momentum.
+// Growing the strip during a smooth slide makes the browser aim the rest of the
+// animation at the wrong offset, so callers wait for this to turn false.
+function isScrolling(): boolean {
+  return (
+    !ready.value ||
+    dragging.value ||
+    programmaticTarget !== null ||
+    performance.now() - lastScrollAt < 160
+  )
+}
+
 function onScroll() {
+  lastScrollAt = performance.now()
   if (!userMoved || !ready.value) return
   syncFromScroll(false)
 }
@@ -258,6 +283,7 @@ async function prepareStrip(kind: 'replace' | 'append' | 'prepend') {
   const openAt = kind === 'replace' ? openingIndex() : index.value
 
   if (kind === 'replace') {
+    const mine = ++replaceToken
     userMoved = false
     ready.value = false
     // Slot widths are reserved via frozen aspect ratios, so we can place
@@ -265,10 +291,10 @@ async function prepareStrip(kind: 'replace' | 'append' | 'prepend') {
     aspects.value = freezeAspects(props.pages)
     emitIndex(openAt)
     await nextTick()
-    if (token !== prepareToken) return
+    if (mine !== replaceToken) return
     scrollToLogicalIndex(openAt, 'auto')
     requestAnimationFrame(() => {
-      if (token !== prepareToken) return
+      if (mine !== replaceToken) return
       scrollToLogicalIndex(openAt, 'auto')
       ready.value = true
     })
@@ -292,7 +318,7 @@ async function prepareStrip(kind: 'replace' | 'append' | 'prepend') {
     scrollToLogicalIndex(programmaticTarget ?? index.value, 'auto')
   } else if (programmaticTarget !== null) {
     scrollToLogicalIndex(programmaticTarget, 'auto')
-  } else if (Math.abs(el.scrollLeft - prevLeft) > 1) {
+  } else if (ready.value && Math.abs(el.scrollLeft - prevLeft) > 1) {
     el.scrollLeft = prevLeft
   }
   prefetchPages(props.pages)
@@ -349,7 +375,7 @@ onUnmounted(() => {
   clearTapTimer()
 })
 
-defineExpose({ nudge, slide, place, index })
+defineExpose({ nudge, slide, place, index, isScrolling })
 </script>
 
 <template>
@@ -369,7 +395,7 @@ defineExpose({ nudge, slide, place, index })
         v-for="(page, i) in pages"
         :key="page"
         class="slot"
-        :class="{ 'is-missing': missingPages.includes(page) }"
+        :class="{ 'is-missing': missingPages.includes(page), 'is-loading': isLoading(page) }"
         :style="{ aspectRatio: String(aspects[i] ?? DEFAULT_ASPECT) }"
       >
         <p v-if="missingPages.includes(page)" class="missing-note">这一页没有找到</p>
@@ -379,6 +405,7 @@ defineExpose({ nudge, slide, place, index })
           :alt="`page-${i + 1}`"
           draggable="false"
           decoding="async"
+          @load="loadedPages.add(page)"
           @error="markMissing(page)"
           @dblclick="onDblClick(i)"
         />
@@ -426,6 +453,7 @@ defineExpose({ nudge, slide, place, index })
 }
 
 .slot {
+  position: relative;
   height: 100%;
   width: auto;
   flex: 0 0 auto;
@@ -433,6 +461,40 @@ defineExpose({ nudge, slide, place, index })
   align-items: center;
   justify-content: center;
   background: #120e10;
+  --skeleton-highlight: rgba(255, 255, 255, 0.1);
+}
+
+/* Shimmer only if the page takes longer than 200ms, so quick turns don't flicker */
+.slot.is-loading::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    100deg,
+    transparent 30%,
+    var(--skeleton-highlight) 50%,
+    transparent 70%
+  );
+  background-size: 200% 100%;
+  animation:
+    skeleton-sweep 1.4s linear infinite,
+    skeleton-appear 0s linear 0.2s both;
+  pointer-events: none;
+}
+
+@keyframes skeleton-appear {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .slot.is-loading::before {
+    display: none;
+  }
 }
 
 .slot.is-missing {

@@ -1,20 +1,31 @@
 <script setup lang="ts">
-defineProps<{
+import { useImagesReady } from '@/composables/useImagesReady'
+
+const props = defineProps<{
   leftImageUrl: string
   rightImageUrl?: string
   label?: string
   to: string | Record<string, unknown>
 }>()
+
+const { ready, settle } = useImagesReady(() => [props.leftImageUrl, props.rightImageUrl])
 </script>
 
 <template>
   <RouterLink class="gallery-card card" :class="{ 'is-dual': rightImageUrl }" :to="to">
-    <div v-if="rightImageUrl" class="dual">
-      <img :src="leftImageUrl" alt="" loading="lazy" />
-      <img :src="rightImageUrl" alt="" loading="lazy" />
+    <div v-if="rightImageUrl" class="dual skeleton" :class="{ 'is-ready': ready }">
+      <img :src="leftImageUrl" alt="" loading="lazy" @load="settle" @error="settle" />
+      <img :src="rightImageUrl" alt="" loading="lazy" @load="settle" @error="settle" />
     </div>
-    <div v-else class="frame">
-      <img class="single" :src="leftImageUrl" :alt="label || ''" loading="lazy" />
+    <div v-else class="frame skeleton" :class="{ 'is-ready': ready }">
+      <img
+        class="single"
+        :src="leftImageUrl"
+        :alt="label || ''"
+        loading="lazy"
+        @load="settle"
+        @error="settle"
+      />
     </div>
     <div v-if="label" class="label">{{ label }}</div>
   </RouterLink>
@@ -64,6 +75,7 @@ defineProps<{
 }
 
 .dual {
+  --skeleton-highlight: rgba(255, 255, 255, 0.12);
   display: grid;
   grid-template-columns: 1fr 1fr;
   width: 100%;

@@ -1,10 +1,12 @@
 import { describe, it, expect } from 'vitest'
+import book1Dual from '../book1-dual-pictures.json'
 import {
   chapterVolumeLabel,
   getPartMeta,
   isPartId,
   listChapterGroups,
   listChapterSpans,
+  locateInChapter,
   resolveRead,
 } from '../catalog'
 
@@ -15,7 +17,7 @@ describe('catalog', () => {
     expect(m.counts.chapters).toBe(160)
     expect(m.counts.covers).toBe(18)
     expect(m.counts.pictures).toBe(18)
-    expect(m.counts.dual).toBe(41)
+    expect(m.counts.dual).toBe(book1Dual.length)
   })
 
   it('resolveRead chapter uses pages when present', () => {
@@ -29,6 +31,16 @@ describe('catalog', () => {
     const r = resolveRead('main', 'covers', '0')
     expect(r?.pages).toHaveLength(1)
     expect(r?.galleryLength).toBe(18)
+  })
+
+  it('locates a dual spread on the earlier page of its chapter', () => {
+    const folder = '/image/[甘詰留太] 奈奈与薰的SM日记 [彩色][日语] - Vol.01'
+    const hit = locateInChapter('main', [`${folder}/26.jpg`, `${folder}/25.jpg`])
+    expect(hit).toEqual({ id: '1', page: 20 })
+  })
+
+  it('returns null when neither image belongs to a chapter', () => {
+    expect(locateInChapter('main', ['/image/missing/1.jpg'])).toBeNull()
   })
 
   it('resolveRead dual returns left+right as two pages, mode dual', () => {

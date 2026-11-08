@@ -14,6 +14,7 @@ import book2Dual from '@/data/book2-dual-pictures.json'
 import book3Dual from '@/data/book3-dual-pictures.json'
 import volumeMaxPages from '@/data/volume-max-pages.json'
 import { pagesInRange } from './chapterPages'
+import { applyDualMark, type DualItem } from './dualSpreads'
 
 export type { GalleryKind, PartId, ReadSource }
 
@@ -65,6 +66,33 @@ const BOOKS: Record<
     pictures: book3Pictures,
     dual: book3Dual,
   },
+}
+
+// Saving a spread rewrites the JSON while a chapter is on screen. Take the new
+// list here so the reader components are not reloaded (that rebuilds the strip).
+if (import.meta.hot) {
+  const dualParts = ['main', 'summer', 'school'] as const
+  const applyDualList = (part: PartId, items: RawGalleryItem[]) => {
+    BOOKS[part].dual = items
+  }
+  import.meta.hot.on('dual:updated', (data: { part?: PartId; items?: RawGalleryItem[] }) => {
+    if (data?.part && Array.isArray(data.items) && dualParts.includes(data.part)) {
+      applyDualList(data.part, data.items)
+    }
+  })
+  import.meta.hot.accept(
+    [
+      '@/data/book1-dual-pictures.json',
+      '@/data/book2-dual-pictures.json',
+      '@/data/book3-dual-pictures.json',
+    ],
+    (mods) => {
+      mods?.forEach((mod, i) => {
+        const next = (mod as { default?: RawGalleryItem[] } | undefined)?.default
+        if (Array.isArray(next)) applyDualList(dualParts[i], next)
+      })
+    },
+  )
 }
 
 export function isPartId(v: string): v is PartId {
@@ -175,6 +203,37 @@ export function whenPagesReady(urls: string[]) {
   return Promise.all(urls.map((url) => loadPage(url)))
 }
 
+const chapterPageAt = new Map<PartId, Map<string, { id: string; page: number }>>()
+
+function chapterPages(part: PartId) {
+  let index = chapterPageAt.get(part)
+  if (index) return index
+  index = new Map()
+  for (const chapter of BOOKS[part].chapters) {
+    if (chapter.num == null) continue
+    const resolved = resolveRead(part, 'chapter', String(chapter.num))
+    resolved?.pages.forEach((url, i) => {
+      if (!index!.has(url)) index!.set(url, { id: String(chapter.num), page: i + 1 })
+    })
+  }
+  chapterPageAt.set(part, index)
+  return index
+}
+
+/** Earliest chapter page among the given images. Dual spreads open there. */
+export function locateInChapter(part: PartId, urls: readonly string[]) {
+  const index = chapterPages(part)
+  let best: { id: string; page: number } | null = null
+  for (const url of urls) {
+    const hit = index.get(url)
+    if (!hit) continue
+    const hitNum = Number(hit.id)
+    const bestNum = best ? Number(best.id) : Infinity
+    if (!best || hitNum < bestNum || (hitNum === bestNum && hit.page < best.page)) best = hit
+  }
+  return best
+}
+
 export function listGallery(part: PartId, kind: GalleryKind) {
   const items = BOOKS[part][kind]
   return items.map((item, index) => ({
@@ -183,6 +242,15 @@ export function listGallery(part: PartId, kind: GalleryKind) {
     rightImageUrl: item.rightImageUrl,
     num: item.num,
   }))
+}
+
+/** Keep the open page's gallery list in step with a dual-page save, without reloading. */
+export function commitDualMark(
+  part: PartId,
+  pair: { leftImageUrl: string; rightImageUrl: string },
+  marked: boolean,
+) {
+  BOOKS[part].dual = applyDualMark(BOOKS[part].dual as DualItem[], pair, marked)
 }
 
 function parsePageNum(url: string): { dir: string; page: number } | null {
