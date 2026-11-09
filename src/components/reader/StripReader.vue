@@ -101,17 +101,17 @@ function syncMeasuredAspects() {
   if (changed) aspects.value = next
 }
 
-function onShownLoad(index: number, event: Event) {
+function onShownLoad(slot: number, event: Event) {
   const img = event.target as HTMLImageElement
-  loadedPages.add(shownSrc(props.pages[index] ?? ''))
+  loadedPages.add(shownSrc(props.pages[slot] ?? ''))
   if (!img.naturalHeight) return
   const aspect = img.naturalWidth / img.naturalHeight
-  if (Math.abs((aspects.value[index] ?? 0) - aspect) < 0.01) return
+  if (Math.abs((aspects.value[slot] ?? 0) - aspect) < 0.01) return
   const next = aspects.value.slice()
-  next[index] = aspect
+  next[slot] = aspect
   aspects.value = next
   // A narrower page changes the offset of everything after it.
-  if (!userMoved && index <= index.value) {
+  if (!userMoved && slot <= index.value) {
     void nextTick(() => scrollToLogicalIndex(index.value, 'auto'))
   }
 }
