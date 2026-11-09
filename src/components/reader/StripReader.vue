@@ -78,7 +78,42 @@ function openingIndex() {
 }
 
 function freezeAspects(urls: string[]) {
-  return urls.map((url) => pageAspect(url) ?? DEFAULT_ASPECT)
+  return urls.map(
+    (url, i) => pageAspect(shownSrc(url)) ?? aspects.value[i] ?? DEFAULT_ASPECT,
+  )
+}
+
+/** Cached images can be complete before @load is bound, so also read the DOM. */
+function syncMeasuredAspects() {
+  const el = scroller.value
+  if (!el) return
+  const next = aspects.value.slice()
+  let changed = false
+  Array.from(el.children).forEach((child, i) => {
+    const img = child.querySelector('img')
+    if (!(img instanceof HTMLImageElement) || !img.complete || !img.naturalHeight) return
+    loadedPages.add(shownSrc(props.pages[i] ?? ''))
+    const aspect = img.naturalWidth / img.naturalHeight
+    if (Math.abs((next[i] ?? 0) - aspect) < 0.01) return
+    next[i] = aspect
+    changed = true
+  })
+  if (changed) aspects.value = next
+}
+
+function onShownLoad(index: number, event: Event) {
+  const img = event.target as HTMLImageElement
+  loadedPages.add(shownSrc(props.pages[index] ?? ''))
+  if (!img.naturalHeight) return
+  const aspect = img.naturalWidth / img.naturalHeight
+  if (Math.abs((aspects.value[index] ?? 0) - aspect) < 0.01) return
+  const next = aspects.value.slice()
+  next[index] = aspect
+  aspects.value = next
+  // A narrower page changes the offset of everything after it.
+  if (!userMoved && index <= index.value) {
+    void nextTick(() => scrollToLogicalIndex(index.value, 'auto'))
+  }
 }
 
 function logicalIndexFromScroll(): number {
@@ -278,7 +313,7 @@ function markMissing(src: string) {
 
 function onDblClick(logical: number) {
   viewerApi({
-    images: props.pages,
+    images: props.pages.map((page) => shownSrc(page)),
     options: { initialViewIndex: logical, navbar: false, title: false },
   })
 }
@@ -303,9 +338,13 @@ async function prepareStrip(kind: 'replace' | 'append' | 'prepend') {
     emitIndex(openAt)
     await nextTick()
     if (mine !== replaceToken) return
+    syncMeasuredAspects()
+    await nextTick()
+    if (mine !== replaceToken) return
     scrollToLogicalIndex(openAt, 'auto')
     requestAnimationFrame(() => {
       if (mine !== replaceToken) return
+      syncMeasuredAspects()
       scrollToLogicalIndex(openAt, 'auto')
       ready.value = true
     })
@@ -321,6 +360,7 @@ async function prepareStrip(kind: 'replace' | 'append' | 'prepend') {
   aspects.value = freezeAspects(props.pages)
   await nextTick()
   if (token !== prepareToken || !el) return
+  syncMeasuredAspects()
 
   if (kind === 'prepend') {
     const grew = el.scrollWidth - prevWidth
@@ -359,6 +399,20 @@ watch(
   () => props.direction,
   async () => {
     if (!ready.value) return
+    await nextTick()
+    scrollToLogicalIndex(index.value, 'auto')
+  },
+)
+
+watch(
+  () => props.pages.map((page) => shownSrc(page)).join('\n'),
+  async (next, prev) => {
+    if (!ready.value || !prev) return
+    const nextUrls = next.split('\n')
+    const prevUrls = prev.split('\n')
+    if (nextUrls.length !== prevUrls.length) return
+    if (nextUrls.every((url, i) => url === prevUrls[i])) return
+    aspects.value = nextUrls.map((url, i) => pageAspect(url) ?? aspects.value[i] ?? DEFAULT_ASPECT)
     await nextTick()
     scrollToLogicalIndex(index.value, 'auto')
   },
@@ -413,11 +467,10 @@ defineExpose({ nudge, slide, place, index, isScrolling })
         <img
           v-else
           :src="shownSrc(page)"
-          :class="{ swapped: shownSrc(page) !== page }"
           :alt="`page-${i + 1}`"
           draggable="false"
           decoding="async"
-          @load="loadedPages.add(shownSrc(page))"
+          @load="onShownLoad(i, $event)"
           @error="markMissing(shownSrc(page))"
           @dblclick="onDblClick(i)"
         />
@@ -472,6 +525,7 @@ defineExpose({ nudge, slide, place, index, isScrolling })
   display: flex;
   align-items: center;
   justify-content: center;
+  overflow: hidden;
   background: #120e10;
   --skeleton-highlight: rgba(255, 255, 255, 0.1);
 }
@@ -523,14 +577,10 @@ defineExpose({ nudge, slide, place, index, isScrolling })
 }
 
 .slot img {
+  width: 100%;
   height: 100%;
   object-fit: contain;
   display: block;
   pointer-events: auto;
-}
-
-/* A translated file stays inside the Japanese page's box, so the strip does not slide. */
-.slot img.swapped {
-  width: 100%;
 }
 </style>

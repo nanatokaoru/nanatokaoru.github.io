@@ -6,13 +6,19 @@ const props = defineProps<{
   chapterName?: string
   leftImageUrl: string
   to: string | Record<string, unknown>
+  current?: boolean
 }>()
 
 const { ready, settle } = useImagesReady(() => [props.leftImageUrl])
 </script>
 
 <template>
-  <RouterLink class="chapter-card card" :to="to">
+  <RouterLink
+    class="chapter-card card"
+    :class="{ current }"
+    :to="to"
+    :aria-current="current ? 'page' : undefined"
+  >
     <div class="frame skeleton" :class="{ 'is-ready': ready }">
       <img
         :src="leftImageUrl"
@@ -23,7 +29,10 @@ const { ready, settle } = useImagesReady(() => [props.leftImageUrl])
       />
     </div>
     <div class="title">
-      <span class="num">第{{ num }}话</span>
+      <span class="num">
+        第{{ num }}话
+        <span v-if="current" class="badge">在读</span>
+      </span>
       <span v-if="chapterName" class="name">{{ chapterName }}</span>
     </div>
   </RouterLink>
@@ -42,6 +51,12 @@ const { ready, settle } = useImagesReady(() => [props.leftImageUrl])
 .chapter-card:hover {
   transform: translateY(-6px);
   box-shadow: 0 14px 28px rgba(59, 42, 51, 0.12);
+}
+
+.chapter-card.current {
+  box-shadow:
+    0 0 0 2px var(--color-accent),
+    0 10px 24px rgba(176, 61, 110, 0.18);
 }
 
 .frame {
@@ -70,9 +85,20 @@ img {
 }
 
 .num {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   font-size: 12px;
   color: var(--color-muted);
   font-variant-numeric: tabular-nums;
+}
+
+.badge {
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: rgba(176, 61, 110, 0.12);
+  color: var(--color-accent);
+  font-size: 11px;
 }
 
 .name {

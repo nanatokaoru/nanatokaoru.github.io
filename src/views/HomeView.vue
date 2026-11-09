@@ -1,12 +1,14 @@
 <script setup lang="ts">
 import { defineAsyncComponent } from 'vue'
 import PartCard from '@/components/PartCard.vue'
+import { useDocumentTitle } from '@/composables/useDocumentTitle'
 import { useReadingProgress } from '@/composables/useReadingProgress'
 import { getPartMeta, listParts } from '@/data/catalog'
 import { WORK } from '@/data/work'
 
 const parts = listParts()
 const { latest } = useReadingProgress()
+useDocumentTitle(null)
 const DevConfigLink = import.meta.env.DEV
   ? defineAsyncComponent(() => import('@/components/DevConfigLink.vue'))
   : null
@@ -27,6 +29,8 @@ function resumeTo(part: string, id: string, page: number) {
           class="hero-cover"
           :src="WORK.heroImageUrl"
           :alt="WORK.title"
+          width="828"
+          height="1200"
           fetchpriority="high"
         />
       </div>
@@ -127,8 +131,8 @@ function resumeTo(part: string, id: string, page: number) {
 .tags li {
   padding: 6px 12px;
   border-radius: 999px;
-  background: rgba(176, 61, 110, 0.1);
-  color: var(--color-accent);
+  background: var(--color-frame);
+  color: var(--color-muted);
   font-size: 13px;
 }
 
@@ -149,12 +153,19 @@ function resumeTo(part: string, id: string, page: number) {
 
 .btn-quiet {
   background: transparent;
-  color: var(--color-accent);
-  box-shadow: inset 0 0 0 1px var(--color-accent);
+  color: var(--color-text);
+  box-shadow: inset 0 0 0 1px rgba(59, 42, 51, 0.18);
 }
 
 .btn-quiet:hover {
-  background: rgba(176, 61, 110, 0.08);
+  background: rgba(59, 42, 51, 0.04);
+  box-shadow:
+    inset 0 0 0 1px rgba(59, 42, 51, 0.28),
+    var(--shadow-btn);
+}
+
+.btn-quiet:active {
+  box-shadow: inset 0 0 0 1px rgba(59, 42, 51, 0.28);
 }
 
 .resume-note {

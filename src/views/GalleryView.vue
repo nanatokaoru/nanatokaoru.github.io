@@ -1,8 +1,10 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useRoute } from 'vue-router'
+import BackToTop from '@/components/BackToTop.vue'
 import GalleryCard from '@/components/GalleryCard.vue'
 import MissingNotice from '@/components/MissingNotice.vue'
+import { useDocumentTitle } from '@/composables/useDocumentTitle'
 import { getPartMeta, isGalleryKind, isPartId, listGallery, locateInChapter } from '@/data/catalog'
 
 const route = useRoute()
@@ -19,6 +21,10 @@ const kindLabel = computed(() => {
   if (kind.value === 'dual') return '双页图'
   return ''
 })
+
+useDocumentTitle(
+  computed(() => (meta.value && kindLabel.value ? `${meta.value.label} · ${kindLabel.value}` : null)),
+)
 
 const items = computed(() =>
   meta.value && kind.value ? listGallery(meta.value.id, kind.value) : [],
@@ -72,6 +78,7 @@ function cardLabel(item: { index: number; leftImageUrl: string; rightImageUrl?: 
         :to="readTarget(item)"
       />
     </div>
+    <BackToTop />
   </div>
   </div>
 </template>

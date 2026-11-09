@@ -4,6 +4,7 @@ import { useRoute, useRouter } from 'vue-router'
 import MissingNotice from '@/components/MissingNotice.vue'
 import StripReader from '@/components/reader/StripReader.vue'
 import { readingTapZone } from '@/components/reader/stripMath'
+import { useDocumentTitle } from '@/composables/useDocumentTitle'
 import { useReaderPrefs } from '@/composables/useReaderPrefs'
 import { useReadingProgress } from '@/composables/useReadingProgress'
 import {
@@ -38,6 +39,7 @@ const progress = useReadingProgress()
 const currentIndex = ref(0)
 const resumeIndex = ref(0)
 const chromeOn = ref(true)
+const settingsOpen = ref(false)
 const unresolved = ref(false)
 const dualSaving = ref(false)
 const dualError = ref('')
@@ -182,6 +184,22 @@ const pageLabel = computed(() => {
   const { current, total } = pageLocal.value
   if (!total) return ''
   return `${current} / ${total}`
+})
+
+const documentPage = computed(() => {
+  if (unresolved.value) return '没有这一话'
+  const title = activeSegment.value?.title
+  if (!title) return null
+  return pageLabel.value ? `${title} · ${pageLabel.value}` : title
+})
+useDocumentTitle(documentPage)
+
+const settingsSummary = computed(() => {
+  const bits: string[] = []
+  if (chapterHasZh.value) bits.push(edition.value === 'zh' ? '中文' : '日文')
+  bits.push(direction.value === 'rtl' ? '从右到左' : '从左到右')
+  if (source.value === 'dual') bits.push(dualSnap.value === 'spread' ? '对开' : '单页')
+  return bits.join(' · ')
 })
 
 const pageProgress = computed(() => {
@@ -498,7 +516,15 @@ function onStageTap(clientX: number) {
   const zone = readingTapZone(clientX, rect.left, rect.width)
   if (zone === 'left') reader.value?.slide('left')
   else if (zone === 'right') reader.value?.slide('right')
-  else chromeOn.value = !chromeOn.value
+  else {
+    chromeOn.value = !chromeOn.value
+    if (!chromeOn.value) settingsOpen.value = false
+  }
+}
+
+function toggleSettings() {
+  settingsOpen.value = !settingsOpen.value
+  if (settingsOpen.value) chromeOn.value = true
 }
 
 function onReaderKey(event: KeyboardEvent) {
@@ -537,31 +563,66 @@ onUnmounted(() => {
     :class="{ 'is-immersive': !chromeOn }"
   >
     <header class="toolbar">
-      <button type="button" class="back" @click="goBack">← 返回</button>
-      <div class="title">
-        {{ activeSegment?.title }}
-        <span v-if="activeSegment?.incomplete" class="warn">暂无完整页</span>
-      </div>
-      <div v-if="source === 'chapter'" class="chapter-jump">
+      <div class="toolbar-main">
+        <button type="button" class="back" @click="goBack">← 返回</button>
+        <div class="title">
+          {{ activeSegment?.title }}
+          <span v-if="activeSegment?.incomplete" class="warn">暂无完整页</span>
+        </div>
+        <span class="page-num">{{ pageLabel }}</span>
+        <div v-if="source === 'chapter'" class="chapter-jump desktop-only">
+          <button
+            type="button"
+            class="chip"
+            :disabled="chapterCursor.prev == null"
+            @click="goChapter(-1)"
+          >
+            上一章
+          </button>
+          <button
+            type="button"
+            class="chip"
+            :disabled="chapterCursor.next == null"
+            @click="goChapter(1)"
+          >
+            下一章
+          </button>
+        </div>
         <button
           type="button"
-          class="chip"
-          :disabled="chapterCursor.prev == null"
-          @click="goChapter(-1)"
+          class="chip settings-toggle"
+          :aria-expanded="settingsOpen"
+          aria-controls="reader-settings"
+          :title="settingsSummary"
+          @click="toggleSettings"
         >
-          上一章
-        </button>
-        <button
-          type="button"
-          class="chip"
-          :disabled="chapterCursor.next == null"
-          @click="goChapter(1)"
-        >
-          下一章
+          <span class="settings-label">设置</span>
         </button>
       </div>
-      <div class="controls">
-        <span class="page-num muted">{{ pageLabel }}</span>
+
+      <div
+        id="reader-settings"
+        class="toolbar-extra"
+        :class="{ 'is-open': settingsOpen }"
+      >
+        <div v-if="source === 'chapter'" class="chapter-jump mobile-only">
+          <button
+            type="button"
+            class="chip"
+            :disabled="chapterCursor.prev == null"
+            @click="goChapter(-1)"
+          >
+            上一章
+          </button>
+          <button
+            type="button"
+            class="chip"
+            :disabled="chapterCursor.next == null"
+            @click="goChapter(1)"
+          >
+            下一章
+          </button>
+        </div>
         <button
           v-if="isDev && source === 'chapter'"
           type="button"
@@ -575,7 +636,8 @@ onUnmounted(() => {
           {{ dualSaving ? '保存中…' : dualMarked ? '已标双页' : '标为双页' }}
         </button>
         <span v-if="dualError" class="warn">{{ dualError }}</span>
-        <div v-if="chapterHasZh" class="segmented" role="group" aria-label="阅读语言">
+        <div v-if="chapterHasZh" class="segmented lang-switch" role="group" aria-label="阅读语言">
+          <span class="lang-thumb" :class="{ zh: edition === 'zh' }" aria-hidden="true" />
           <button
             type="button"
             class="seg"
@@ -683,11 +745,13 @@ onUnmounted(() => {
 <style scoped>
 .read-root {
   min-height: 100vh;
+  min-height: 100dvh;
 }
 
 .read-page {
   position: relative;
   height: 100vh;
+  height: 100dvh;
   display: flex;
   flex-direction: column;
   background: #1a1518;
@@ -701,12 +765,18 @@ onUnmounted(() => {
   right: 0;
   z-index: 4;
   display: flex;
-  flex-wrap: wrap;
+  flex-direction: row;
+  flex-wrap: nowrap;
   align-items: center;
   gap: 12px;
-  padding: 10px 16px 14px;
-  background: rgba(26, 21, 24, 0.92);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  padding:
+    calc(10px + env(safe-area-inset-top, 0px))
+    calc(14px + env(safe-area-inset-right, 0px))
+    10px
+    calc(12px + env(safe-area-inset-left, 0px));
+  background: linear-gradient(to bottom, rgba(16, 10, 14, 0.82), rgba(16, 10, 14, 0.42) 72%, transparent);
+  border-bottom: 0;
+  backdrop-filter: blur(10px);
   transition: transform var(--motion-duration) ease;
 }
 
@@ -715,22 +785,54 @@ onUnmounted(() => {
   pointer-events: none;
 }
 
+.toolbar-main,
+.toolbar-extra,
+.chapter-jump {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 4px;
+  align-items: center;
+}
+
+.toolbar-main {
+  flex: 1;
+  min-width: 0;
+  gap: 10px;
+}
+
+.toolbar-extra {
+  flex: 0 0 auto;
+  gap: 8px;
+}
+
 .back {
-  color: #f7c4d8;
-  font-size: 14px;
-  min-height: 44px;
+  color: rgba(247, 238, 242, 0.72);
+  font-size: 13px;
+  height: 32px;
   display: inline-flex;
   align-items: center;
-  padding: 0;
+  justify-content: center;
+  padding: 1px 8px 0;
   border: 0;
+  border-radius: 999px;
   background: none;
   cursor: pointer;
 }
 
+.back:hover {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.08);
+}
+
 .title {
   flex: 1;
-  min-width: 160px;
-  font-size: 15px;
+  min-width: 0;
+  font-family: var(--font-display);
+  font-size: 16px;
+  letter-spacing: 0.02em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .warn {
@@ -739,64 +841,118 @@ onUnmounted(() => {
   font-size: 13px;
 }
 
-.chapter-jump,
-.controls {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  align-items: center;
-}
-
 .page-num {
-  font-size: 13px;
+  font-size: 12px;
+  letter-spacing: 0.04em;
   font-variant-numeric: tabular-nums;
-  margin-right: 4px;
+  flex: 0 0 auto;
+  color: rgba(247, 238, 242, 0.55);
 }
 
 .segmented {
   display: inline-flex;
-  border: 1px solid rgba(255, 255, 255, 0.2);
+  gap: 2px;
+  padding: 2px;
   border-radius: 999px;
-  overflow: hidden;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.lang-switch {
+  position: relative;
+  display: inline-grid;
+  grid-template-columns: 1fr 1fr;
+}
+
+.lang-thumb {
+  position: absolute;
+  z-index: 0;
+  top: 2px;
+  bottom: 2px;
+  left: 2px;
+  width: calc(50% - 3px);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.16);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.14);
+  pointer-events: none;
+  transition: transform 240ms var(--motion-ease);
+}
+
+.lang-thumb.zh {
+  transform: translateX(calc(100% + 2px));
+}
+
+.lang-switch .seg {
+  position: relative;
+  z-index: 1;
+}
+
+.lang-switch .seg.active {
+  background: transparent;
+  box-shadow: none;
+}
+
+.lang-switch .seg:active {
+  transform: none;
 }
 
 .seg,
 .chip {
-  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 30px;
   border: none;
   background: transparent;
-  color: inherit;
-  padding: 0 14px;
-  cursor: pointer;
-  font-size: 13px;
-  transition:
-    background var(--motion-duration) ease,
-    color var(--motion-duration) ease;
-}
-
-.seg + .seg {
-  border-left: 1px solid rgba(255, 255, 255, 0.14);
-}
-
-.seg.active {
-  background: rgba(176, 61, 110, 0.9);
-  color: #fff;
-}
-
-.chip {
-  border: 1px solid rgba(255, 255, 255, 0.2);
+  color: rgba(247, 238, 242, 0.72);
+  padding: 0 10px;
   border-radius: 999px;
+  cursor: pointer;
+  font-size: 12px;
+  line-height: 1;
+  transition:
+    background 160ms ease,
+    color 160ms ease,
+    box-shadow 160ms ease,
+    transform 160ms var(--motion-ease);
 }
 
-.chip.active {
-  background: rgba(176, 61, 110, 0.9);
+.settings-toggle {
+  display: none;
+  box-sizing: border-box;
+  min-width: 52px;
+  background: rgba(255, 255, 255, 0.1);
   color: #fff;
-  border-color: transparent;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.28);
+}
+
+.desktop-only {
+  display: flex;
+}
+
+.mobile-only {
+  display: none;
+}
+
+.seg.active,
+.chip.active {
+  background: rgba(255, 255, 255, 0.16);
+  color: #fff;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.14);
 }
 
 .chip:hover:not(:disabled),
 .seg:hover:not(.active) {
-  background: rgba(176, 61, 110, 0.28);
+  color: #fff;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.chip:active:not(:disabled),
+.seg:active {
+  transform: translateY(1px);
+}
+
+.chip.settings-toggle:active {
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.35);
 }
 
 .chip:disabled {
@@ -809,8 +965,8 @@ onUnmounted(() => {
   left: 0;
   right: 0;
   bottom: 0;
-  height: 3px;
-  background: rgba(255, 255, 255, 0.08);
+  height: 2px;
+  background: transparent;
 }
 
 .progress-fill {
@@ -845,18 +1001,19 @@ onUnmounted(() => {
   cursor: pointer;
   opacity: 0.35;
   transform: translateY(-50%);
+  box-shadow: 0 8px 18px rgba(0, 0, 0, 0.28);
   transition:
-    background var(--motion-duration) ease,
-    opacity var(--motion-duration) ease,
-    transform var(--motion-duration) var(--motion-ease);
+    background 180ms ease,
+    opacity 180ms ease,
+    box-shadow 180ms ease;
 }
 
 .nav-btn.left {
-  left: 16px;
+  left: calc(16px + env(safe-area-inset-left, 0px));
 }
 
 .nav-btn.right {
-  right: 16px;
+  right: calc(16px + env(safe-area-inset-right, 0px));
 }
 
 .stage:hover .nav-btn,
@@ -873,12 +1030,12 @@ onUnmounted(() => {
 }
 
 .nav-btn:hover {
-  background: rgba(176, 61, 110, 0.92);
-  transform: translateY(-50%) scale(1.06);
+  background: rgba(42, 32, 36, 0.92);
+  box-shadow: 0 10px 22px rgba(0, 0, 0, 0.35);
 }
 
 .nav-btn:active {
-  transform: translateY(-50%) scale(0.94);
+  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.4);
 }
 
 .muted {
@@ -886,6 +1043,54 @@ onUnmounted(() => {
 }
 
 @media (max-width: 720px) {
+  .toolbar {
+    flex-wrap: wrap;
+    row-gap: 8px;
+    align-items: center;
+    background: rgba(16, 10, 14, 0.9);
+  }
+
+  .desktop-only {
+    display: none;
+  }
+
+  .mobile-only {
+    display: flex;
+  }
+
+  .toolbar-extra {
+    display: none;
+    flex: 1 0 100%;
+    flex-wrap: wrap;
+    align-items: center;
+    padding-top: 2px;
+  }
+
+  .toolbar-extra.is-open {
+    display: flex;
+  }
+
+  .seg,
+  .chip {
+    height: 36px;
+  }
+
+  .chip.settings-toggle {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 auto;
+    align-self: center;
+    height: 32px;
+    padding: 0 12px;
+  }
+
+  .settings-label {
+    display: block;
+    line-height: 1;
+    transform: translateY(1px);
+  }
+
   .nav-btn {
     width: 40px;
     height: 40px;
@@ -894,18 +1099,13 @@ onUnmounted(() => {
   }
 
   .nav-btn.left {
-    left: 8px;
+    left: calc(8px + env(safe-area-inset-left, 0px));
   }
 
   .nav-btn.right {
-    right: 8px;
+    right: calc(8px + env(safe-area-inset-right, 0px));
   }
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .nav-btn:hover,
-  .nav-btn:active {
-    transform: none;
-  }
-}
+
 </style>

@@ -1,23 +1,33 @@
 <script setup lang="ts">
-import { computed, reactive } from 'vue'
-import { useRoute } from 'vue-router'
+import { computed, reactive, ref } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
+import BackToTop from '@/components/BackToTop.vue'
 import ChapterCard from '@/components/ChapterCard.vue'
 import MissingNotice from '@/components/MissingNotice.vue'
 import VolumeIntro from '@/components/VolumeIntro.vue'
+import { useDocumentTitle } from '@/composables/useDocumentTitle'
 import { useReadingProgress } from '@/composables/useReadingProgress'
 import { getPartMeta, isPartId, listChapterGroups, listGallery } from '@/data/catalog'
 import { mainVolumeBlurb } from '@/data/mainVolumes'
 
 const route = useRoute()
+const router = useRouter()
 
 const partParam = computed(() => String(route.params.part ?? ''))
 
 const meta = computed(() => (isPartId(partParam.value) ? getPartMeta(partParam.value) : null))
+useDocumentTitle(computed(() => meta.value?.label ?? null))
 const { forPart } = useReadingProgress()
 const resume = computed(() => (meta.value ? forPart(meta.value.id) : null))
+const resumeNum = computed(() => {
+  const n = Number(resume.value?.id)
+  return Number.isInteger(n) ? n : null
+})
 const chapterGroups = computed(() =>
   isPartId(partParam.value) ? listChapterGroups(partParam.value) : [],
 )
+const jumpInput = ref('')
+const jumpError = ref('')
 
 const coverByVolume = computed(() => {
   const covers = new Map<number, string>()
@@ -56,6 +66,28 @@ function volumeBlurb(label: string) {
   const n = volumeNumber(label)
   if (n == null || meta.value?.id !== 'main') return undefined
   return mainVolumeBlurb(n)
+}
+
+function chapterExists(num: number) {
+  return chapterGroups.value.some((group) => group.chapters.some((chapter) => chapter.num === num))
+}
+
+function jumpToChapter() {
+  if (!meta.value) return
+  const num = Number(jumpInput.value)
+  if (!Number.isInteger(num) || num < 1) {
+    jumpError.value = '请输入话数'
+    return
+  }
+  if (!chapterExists(num)) {
+    jumpError.value = `没有第${num}话`
+    return
+  }
+  jumpError.value = ''
+  void router.push({
+    name: 'read',
+    query: { part: meta.value.id, source: 'chapter', id: String(num) },
+  })
 }
 
 const galleries = computed(() => {
@@ -159,15 +191,34 @@ const galleries = computed(() => {
 
     <section class="chapters">
       <h2 class="section-title">章节（{{ meta.counts.chapters }} 话）</h2>
-      <nav v-if="meta.id === 'main'" class="volume-jump" aria-label="按卷跳转">
-        <a
-          v-for="group in chapterGroups"
-          :key="group.volume"
-          :href="`#vol-${volumeNumber(group.volume)}`"
-        >
-          {{ volumeNumber(group.volume) }}
-        </a>
-      </nav>
+      <div class="chapter-tools">
+        <nav v-if="meta.id === 'main'" class="volume-jump" aria-label="按卷跳转">
+          <a
+            v-for="group in chapterGroups"
+            :key="group.volume"
+            :href="`#vol-${volumeNumber(group.volume)}`"
+          >
+            {{ volumeNumber(group.volume) }}
+          </a>
+        </nav>
+        <form class="chapter-jump-form" @submit.prevent="jumpToChapter">
+          <label class="jump-label" for="chapter-jump-input">跳到第</label>
+          <input
+            id="chapter-jump-input"
+            v-model="jumpInput"
+            class="jump-input"
+            type="number"
+            inputmode="numeric"
+            min="1"
+            step="1"
+            name="chapter"
+            autocomplete="off"
+            placeholder="话数"
+          />
+          <button type="submit" class="jump-go">话</button>
+          <span v-if="jumpError" class="jump-error" role="status">{{ jumpError }}</span>
+        </form>
+      </div>
       <div
         v-for="group in chapterGroups"
         :id="volumeNumber(group.volume) != null ? `vol-${volumeNumber(group.volume)}` : undefined"
@@ -182,20 +233,27 @@ const galleries = computed(() => {
         />
         <h3 v-else class="volume-title">{{ group.volume }}</h3>
         <div class="chapter-grid">
-          <ChapterCard
+          <div
             v-for="chapter in group.chapters"
+            :id="`chapter-${meta.id}-${chapter.num}`"
             :key="`${meta.id}-${chapter.num}`"
-            :num="chapter.num"
-            :chapter-name="chapter.chapterName"
-            :left-image-url="chapter.leftImageUrl"
-            :to="{
-              name: 'read',
-              query: { part: meta.id, source: 'chapter', id: String(chapter.num) },
-            }"
-          />
+            class="chapter-anchor"
+          >
+            <ChapterCard
+              :num="chapter.num"
+              :chapter-name="chapter.chapterName"
+              :left-image-url="chapter.leftImageUrl"
+              :current="resumeNum === chapter.num"
+              :to="{
+                name: 'read',
+                query: { part: meta.id, source: 'chapter', id: String(chapter.num) },
+              }"
+            />
+          </div>
         </div>
       </div>
     </section>
+    <BackToTop />
   </div>
   </div>
 </template>
@@ -304,11 +362,102 @@ h1 {
   color: #ffc2d8;
 }
 
-.volume-jump {
+.chapter-tools {
+  position: sticky;
+  top: env(safe-area-inset-top, 0px);
+  z-index: 6;
   display: flex;
   flex-wrap: wrap;
+  gap: 8px 18px;
+  align-items: center;
+  margin: 0 calc(-1 * (20px + env(safe-area-inset-right, 0px))) 22px
+    calc(-1 * (20px + env(safe-area-inset-left, 0px)));
+  padding: 8px calc(20px + env(safe-area-inset-right, 0px)) 10px
+    calc(20px + env(safe-area-inset-left, 0px));
+  background: var(--color-bg);
+  box-shadow: 0 1px 0 rgba(59, 42, 51, 0.06);
+}
+
+.volume-jump {
+  display: flex;
+  flex: 1 1 220px;
+  flex-wrap: nowrap;
   gap: 8px;
-  margin-bottom: 22px;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.volume-jump::-webkit-scrollbar {
+  display: none;
+}
+
+.chapter-jump-form {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.jump-label {
+  font-size: 14px;
+  color: var(--color-muted);
+}
+
+.jump-input {
+  width: 4.5em;
+  min-height: 44px;
+  padding: 0 10px;
+  border: 1px solid rgba(59, 42, 51, 0.16);
+  border-radius: 10px;
+  background: var(--color-surface);
+  color: var(--color-text);
+  font: inherit;
+  font-variant-numeric: tabular-nums;
+}
+
+.jump-input:focus {
+  border-color: var(--color-accent);
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(176, 61, 110, 0.16);
+}
+
+.jump-go {
+  min-height: 44px;
+  min-width: 44px;
+  padding: 0 14px;
+  border: 1px solid rgba(59, 42, 51, 0.16);
+  border-radius: 999px;
+  background: var(--color-surface);
+  color: var(--color-text);
+  cursor: pointer;
+  font: inherit;
+  transition:
+    background var(--motion-duration) ease,
+    border-color var(--motion-duration) ease,
+    color var(--motion-duration) ease,
+    transform var(--motion-duration) var(--motion-ease);
+}
+
+.jump-go:hover {
+  background: rgba(176, 61, 110, 0.08);
+  border-color: rgba(176, 61, 110, 0.35);
+  color: var(--color-accent);
+  transform: translateY(-1px);
+}
+
+.jump-go:active {
+  transform: translateY(1px);
+}
+
+.jump-error {
+  font-size: 13px;
+  color: var(--color-accent);
+}
+
+.chapter-anchor {
+  scroll-margin-top: 24px;
+  min-width: 0;
 }
 
 .volume-jump a {
@@ -318,18 +467,25 @@ h1 {
   align-items: center;
   justify-content: center;
   border-radius: 999px;
-  border: 1px solid rgba(176, 61, 110, 0.28);
-  color: var(--color-accent);
+  border: 1px solid rgba(59, 42, 51, 0.14);
+  color: var(--color-muted);
   font-variant-numeric: tabular-nums;
+  flex: 0 0 auto;
   background: var(--color-surface);
+  transition:
+    background var(--motion-duration) ease,
+    border-color var(--motion-duration) ease,
+    color var(--motion-duration) ease;
 }
 
 .volume-jump a:hover {
-  background: rgba(176, 61, 110, 0.1);
+  background: rgba(176, 61, 110, 0.08);
+  border-color: rgba(176, 61, 110, 0.28);
+  color: var(--color-accent);
 }
 
 .volume-block {
-  scroll-margin-top: 16px;
+  scroll-margin-top: 140px;
 }
 
 .volume-block + .volume-block {
