@@ -49,8 +49,16 @@ const { ready, settle } = useImagesReady(() => [props.leftImageUrl])
 }
 
 .chapter-card:hover {
-  transform: translateY(-6px);
+  transform: translateY(-2px);
   box-shadow: 0 14px 28px rgba(59, 42, 51, 0.12);
+}
+
+.chapter-card .frame img {
+  transition: transform 280ms var(--motion-ease);
+}
+
+.chapter-card:hover .frame img {
+  transform: scale(1.03);
 }
 
 .chapter-card.current {
@@ -66,6 +74,7 @@ const { ready, settle } = useImagesReady(() => [props.leftImageUrl])
   justify-content: center;
   background: var(--color-frame);
   padding: 8px;
+  overflow: hidden;
 }
 
 img {
@@ -111,7 +120,8 @@ img {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .chapter-card:hover {
+  .chapter-card:hover,
+  .chapter-card:hover .frame img {
     transform: none;
   }
 }

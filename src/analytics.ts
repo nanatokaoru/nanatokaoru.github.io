@@ -30,7 +30,10 @@ export function installAnalytics(router: Router) {
   const umamiSrc = String(import.meta.env.VITE_UMAMI_SCRIPT_URL ?? '').trim()
   const cfToken = String(import.meta.env.VITE_CF_BEACON_TOKEN ?? '').trim()
 
-  if (umamiId && umamiSrc) {
+  // Local preview and dev should not count toward the public stats.
+  const local = ['localhost', '127.0.0.1', '[::1]'].includes(window.location.hostname)
+
+  if (umamiId && umamiSrc && !local) {
     loadScript(umamiSrc, {
       'data-website-id': umamiId,
       'data-auto-track': 'false',

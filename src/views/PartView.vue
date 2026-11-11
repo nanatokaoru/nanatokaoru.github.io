@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, reactive, ref } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import BackToTop from '@/components/BackToTop.vue'
 import ChapterCard from '@/components/ChapterCard.vue'
@@ -90,6 +90,72 @@ function jumpToChapter() {
   })
 }
 
+// The volume the reader is in, shown on the sticky jump bar.
+const activeVolume = ref<number | null>(null)
+
+// Runs on every scroll event, not behind requestAnimationFrame: a frame can be
+// deferred in background or unfocused tabs, which left the last volume stale.
+function updateActiveVolume() {
+  const blocks = Array.from(document.querySelectorAll<HTMLElement>('.volume-block[id^="vol-"]'))
+  const first = blocks[0]
+  if (!first) {
+    activeVolume.value = null
+    return
+  }
+  // A jump lands the heading ~140px from the top (scroll-margin), a bit below the bar,
+  // so count a volume as current once its heading is within reach of the bar.
+  const bar = document.querySelector<HTMLElement>('.chapter-tools')
+  const line = (bar?.getBoundingClientRect().bottom ?? 0) + 90
+  let current = Number(first.id.slice(4))
+  for (const block of blocks) {
+    if (block.getBoundingClientRect().top > line) break
+    current = Number(block.id.slice(4))
+  }
+  activeVolume.value = current
+}
+
+function jumpVolume(label: string) {
+  const n = volumeNumber(label)
+  // Highlight right away; scroll events can lag right after an anchor jump.
+  if (n !== null) activeVolume.value = n
+  window.setTimeout(updateActiveVolume, 300)
+}
+
+function isActiveVolume(label: string) {
+  const n = volumeNumber(label)
+  return n !== null && n === activeVolume.value
+}
+
+watch(activeVolume, () => {
+  void nextTick(() => {
+    const nav = document.querySelector<HTMLElement>('.volume-jump')
+    const link = nav?.querySelector<HTMLElement>('a[aria-current="true"]')
+    if (!nav || !link) return
+    const navBox = nav.getBoundingClientRect()
+    const linkBox = link.getBoundingClientRect()
+    nav.scrollBy({
+      left: linkBox.left - navBox.left - (navBox.width - linkBox.width) / 2,
+      behavior: 'smooth',
+    })
+  })
+})
+
+watch(
+  () => meta.value?.id,
+  () => {
+    void nextTick(updateActiveVolume)
+  },
+)
+
+onMounted(() => {
+  window.addEventListener('scroll', updateActiveVolume, { passive: true })
+  updateActiveVolume()
+})
+
+onUnmounted(() => {
+  window.removeEventListener('scroll', updateActiveVolume)
+})
+
 const galleries = computed(() => {
   if (!meta.value) return []
   const covers = listGallery(meta.value.id, 'covers')
@@ -124,7 +190,7 @@ const galleries = computed(() => {
   <MissingNotice v-if="!meta" />
   <div v-else class="page part-page">
     <nav class="top">
-      <RouterLink class="back muted" :to="{ name: 'home' }">← 返回专题</RouterLink>
+      <RouterLink class="back muted" :to="{ name: 'home' }">返回专题</RouterLink>
       <h1 class="display-title">{{ meta.label }}</h1>
       <RouterLink
         v-if="resume"
@@ -197,6 +263,8 @@ const galleries = computed(() => {
             v-for="group in chapterGroups"
             :key="group.volume"
             :href="`#vol-${volumeNumber(group.volume)}`"
+            :aria-current="isActiveVolume(group.volume) ? 'true' : undefined"
+            @click="jumpVolume(group.volume)"
           >
             {{ volumeNumber(group.volume) }}
           </a>
@@ -482,6 +550,14 @@ h1 {
   background: rgba(176, 61, 110, 0.08);
   border-color: rgba(176, 61, 110, 0.28);
   color: var(--color-accent);
+}
+
+/* Current volume: same quiet accent as the "在读" badge, not a solid fill. */
+.volume-jump a[aria-current='true'] {
+  background: rgba(176, 61, 110, 0.08);
+  border-color: var(--color-accent);
+  color: var(--color-accent);
+  font-weight: 600;
 }
 
 .volume-block {

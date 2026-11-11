@@ -116,14 +116,26 @@ function prefetchShown(urls: string[]) {
   prefetchPages(urls.map((url) => pageImage(url, 'zh')))
 }
 
+let editionTicket = 0
+let pendingEdition: 'ja' | 'zh' | null = null
+
 async function setEdition(next: 'ja' | 'zh') {
-  if (edition.value === next) return
-  if (next === 'zh') {
-    const urls = stripPages.value.map((url) => pageImage(url, 'zh'))
-    prefetchPages(urls)
-    await whenPagesReady(urls)
+  // 连点时前一次往往还停在 await 上，版本号也还没改。以最后一次点击为准。
+  if ((pendingEdition ?? edition.value) === next) return
+  const ticket = ++editionTicket
+  pendingEdition = next
+  const urls = stripPages.value.map((url) => pageImage(url, next))
+  prefetchPages(urls)
+  await whenPagesReady(urls)
+  if (ticket !== editionTicket) return
+  pendingEdition = null
+  if (edition.value !== next) {
+    storeEdition(next)
+    return
   }
-  storeEdition(next)
+  // 连点最终又回到当前版本时，displaySrc 不会变，阅读器也不会重贴。
+  // 主动摆一次，避免中间那几次被取消的切换把滚动位置留歪。
+  reader.value?.place(currentIndex.value, 'auto')
 }
 
 const currentSpread = computed(() => {
@@ -564,7 +576,7 @@ onUnmounted(() => {
   >
     <header class="toolbar">
       <div class="toolbar-main">
-        <button type="button" class="back" @click="goBack">← 返回</button>
+        <button type="button" class="back" @click="goBack">返回</button>
         <div class="title">
           {{ activeSegment?.title }}
           <span v-if="activeSegment?.incomplete" class="warn">暂无完整页</span>
@@ -732,10 +744,28 @@ onUnmounted(() => {
         @tap="onStageTap"
       />
       <button type="button" class="nav-btn left" aria-label="向左翻" @click="reader?.slide('left')">
-        ‹
+        <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true">
+          <path
+            d="M14 6l-6 6 6 6"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.8"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          />
+        </svg>
       </button>
       <button type="button" class="nav-btn right" aria-label="向右翻" @click="reader?.slide('right')">
-        ›
+        <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true">
+          <path
+            d="M10 6l6 6-6 6"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.8"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          />
+        </svg>
       </button>
     </div>
   </div>
@@ -990,14 +1020,16 @@ onUnmounted(() => {
   position: absolute;
   top: 50%;
   z-index: 2;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   width: 48px;
   height: 48px;
+  padding: 0;
   border: 1px solid rgba(255, 255, 255, 0.28);
   border-radius: 50%;
   background: rgba(26, 21, 24, 0.72);
   color: #fff;
-  font-size: 30px;
-  line-height: 1;
   cursor: pointer;
   opacity: 0.35;
   transform: translateY(-50%);
@@ -1005,7 +1037,21 @@ onUnmounted(() => {
   transition:
     background 180ms ease,
     opacity 180ms ease,
-    box-shadow 180ms ease;
+    box-shadow 180ms ease,
+    transform 120ms ease;
+}
+
+.nav-btn svg {
+  display: block;
+}
+
+/* 按下时沿翻页方向轻挪 2px，颜色不变 */
+.nav-btn.left:active {
+  transform: translate(-2px, -50%);
+}
+
+.nav-btn.right:active {
+  transform: translate(2px, -50%);
 }
 
 .nav-btn.left {
@@ -1094,8 +1140,12 @@ onUnmounted(() => {
   .nav-btn {
     width: 40px;
     height: 40px;
-    font-size: 26px;
     opacity: 0.75;
+  }
+
+  .nav-btn svg {
+    width: 20px;
+    height: 20px;
   }
 
   .nav-btn.left {

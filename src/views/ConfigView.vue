@@ -117,7 +117,7 @@ async function save() {
 
 <template>
   <div class="page config-page">
-    <RouterLink class="back muted" :to="{ name: 'home' }">← 返回专题</RouterLink>
+    <RouterLink class="back muted" :to="{ name: 'home' }">返回专题</RouterLink>
     <h1 class="display-title">章节范围</h1>
     <p class="lead muted">
       每一话现在从哪一页读到哪一页。改起止或标题后保存，阅读页会按新的页码打开。保存只在本地开发服务里写入章节文件。

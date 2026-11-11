@@ -47,12 +47,24 @@ const { ready, settle } = useImagesReady(() => [props.leftImageUrl, props.rightI
 }
 
 .gallery-card:hover {
-  transform: translateY(-6px);
+  transform: translateY(-2px);
   box-shadow: 0 14px 28px rgba(59, 42, 51, 0.12);
 }
 
+.gallery-card .single,
+.gallery-card .dual img {
+  transition: transform 280ms var(--motion-ease);
+}
+
+.gallery-card:hover .single,
+.gallery-card:hover .dual img {
+  transform: scale(1.03);
+}
+
 @media (prefers-reduced-motion: reduce) {
-  .gallery-card:hover {
+  .gallery-card:hover,
+  .gallery-card:hover .single,
+  .gallery-card:hover .dual img {
     transform: none;
   }
 }
@@ -64,6 +76,7 @@ const { ready, settle } = useImagesReady(() => [props.leftImageUrl, props.rightI
   justify-content: center;
   background: #f6eef1;
   padding: 8px;
+  overflow: hidden;
 }
 
 .single {

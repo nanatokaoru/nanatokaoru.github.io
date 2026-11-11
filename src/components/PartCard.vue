@@ -41,8 +41,16 @@ const { ready, settle } = useImagesReady(() => [props.coverUrl])
 }
 
 .part-card:hover {
-  transform: translateY(-6px);
+  transform: translateY(-2px);
   box-shadow: 0 14px 28px rgba(59, 42, 51, 0.12);
+}
+
+.part-card .cover {
+  transition: transform 280ms var(--motion-ease);
+}
+
+.part-card:hover .cover {
+  transform: scale(1.03);
 }
 
 .cover-frame {
@@ -52,6 +60,7 @@ const { ready, settle } = useImagesReady(() => [props.coverUrl])
   justify-content: center;
   background: var(--color-frame);
   padding: 12px;
+  overflow: hidden;
 }
 
 .cover {
@@ -90,7 +99,8 @@ h2 {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .part-card:hover {
+  .part-card:hover,
+  .part-card:hover .cover {
     transform: none;
   }
 }

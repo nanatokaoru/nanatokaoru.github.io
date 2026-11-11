@@ -63,7 +63,7 @@ function cardLabel(item: { index: number; leftImageUrl: string; rightImageUrl?: 
   <div v-else class="page gallery-page">
     <nav class="top">
       <RouterLink class="back muted" :to="{ name: 'part', params: { part: meta.id } }">
-        ← 返回{{ meta.label }}
+        返回{{ meta.label }}
       </RouterLink>
       <h1 class="display-title">{{ meta.label }} · {{ kindLabel }}（{{ items.length }}）</h1>
     </nav>
